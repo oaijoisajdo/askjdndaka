@@ -1,0 +1,9 @@
+field,present,non_null
+accuracy,True,320
+nll,True,320
+brier,True,320
+ece,True,320
+mean_predictive_entropy,True,320
+mean_expected_entropy,False,0
+mean_mutual_information,True,320
+mean_confidence,True,320
