@@ -65,9 +65,21 @@ def _probe_one_input(posterior, x_i, y_i, *, eps, key, mean_layers,
         # CP interval on violation prob -> flip to robustness
         "p_safe_ci_low": float(1.0 - pess.ci_high),
         "p_safe_ci_high": float(1.0 - pess.ci_low),
+        # optimistic-side CP interval (violation prob -> robustness), so both
+        # estimators' intervals are reconstructable, not just the pessimistic
+        "p_safe_ci_low_optimistic": float(1.0 - opt.ci_high),
+        "p_safe_ci_high_optimistic": float(1.0 - opt.ci_low),
         # verifier diagnostics
         "unknown_frac": float(pess.unk / pess.n),
+        # raw per-side counts. Both sides share one verdict stream, so
+        # pess.n == opt.n == n_samples_used (Massart draws); this differs
+        # from n_property_evaluations, which additionally counts the
+        # counterexample-search / bound evaluations inside the verifier.
         "n_samples_used": int(pess.n),
+        "k_violation_pessimistic": int(pess.k),
+        "unk_pessimistic": int(pess.unk),
+        "k_violation_optimistic": int(opt.k),
+        "unk_optimistic": int(opt.unk),
         "n_property_evaluations": int(bounds.n_property_evaluations),
         # sigma -> 0 control: verdict for the posterior-mean network
         "mean_net_verdict": (

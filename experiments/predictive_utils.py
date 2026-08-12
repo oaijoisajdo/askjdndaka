@@ -197,15 +197,28 @@ def clean_report(probs: np.ndarray, y: np.ndarray, *, n_bins: int = 15) -> dict:
     """The Phase B 'calibration baselines on clean data' row."""
     pbar = predictive_mean(probs)
     unc = uncertainty_measures(probs)
+    ece_ew = ece(pbar, y, n_bins=n_bins)
+    ece_ad = ece(pbar, y, n_bins=n_bins, adaptive=True)
     return {
         "n": int(len(y)),
         "mc_samples": int(probs.shape[0]),
         "accuracy": accuracy(pbar, y),
         "nll": nll(pbar, y),
         "brier": brier(pbar, y),
-        "ece": ece(pbar, y, n_bins=n_bins)["ece"],
-        "ece_adaptive": ece(pbar, y, n_bins=n_bins, adaptive=True)["ece"],
+        "ece": ece_ew["ece"],
+        "ece_adaptive": ece_ad["ece"],
+        # Per-bin (count, acc, conf) tables: enable reliability diagrams and
+        # the binned Brier calibration/refinement decomposition downstream,
+        # which the scalar Brier alone cannot support.
+        "reliability_bins": ece_ew["bins"],
+        "reliability_bins_adaptive": ece_ad["bins"],
         "mean_predictive_entropy": float(unc["predictive_entropy"].mean()),
         "mean_mutual_information": float(unc["mutual_information"].mean()),
+        # Aleatoric component. Equals mean_predictive_entropy -
+        # mean_mutual_information by definition; emitted directly so
+        # future runs do not depend on the reconstruction in
+        # analysis.loading. NOTE: uncertainty_measures names this key
+        # "aleatoric_entropy", not "expected_entropy".
+        "mean_expected_entropy": float(unc["aleatoric_entropy"].mean()),
         "mean_confidence": float(unc["confidence"].mean()),
     }

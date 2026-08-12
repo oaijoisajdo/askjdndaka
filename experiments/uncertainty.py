@@ -58,11 +58,25 @@ def per_input_uncertainty(probs_snc, y) -> dict[str, list]:
     entropy = -(mean_p * np.log(mean_p + _EPS)).sum(-1)
     expected_entropy = -(p * np.log(p + _EPS)).sum(-1).mean(axis=0)   # (N,)
 
+    # Top-2 margin of the posterior-predictive mean: p_(1) - p_(2), in [0, 1].
+    # This is the baseline the alignment analysis conditions on; scores.py
+    # maps it to ``one_minus_margin`` for direction-consistent ranking.
+    top2 = np.sort(mean_p, axis=-1)[:, -2:]             # (N, 2) ascending
+    margin = top2[:, 1] - top2[:, 0]
+
+    # Predictive variance across posterior samples, summed over classes:
+    #   sum_c Var_S[p_c].  Reparameterization-invariant (a property of the
+    # predictive distribution, not of the weights), unlike raw layerwise
+    # spread (Dinh et al. 2017).
+    predictive_variance = p.var(axis=0).sum(-1)         # (N,)
+
     return {
         "n_mc_samples": int(p.shape[0]),
         "predictive_entropy": entropy.tolist(),
         "mutual_information": (entropy - expected_entropy).tolist(),
         "expected_entropy": expected_entropy.tolist(),
         "confidence": mean_p.max(-1).tolist(),
+        "predictive_margin": margin.tolist(),
+        "predictive_variance": predictive_variance.tolist(),
         "correct": (mean_p.argmax(-1) == np.asarray(y)).astype(int).tolist(),
     }

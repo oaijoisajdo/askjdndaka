@@ -87,6 +87,9 @@ class AttackConfig:
     steps: int = 40
     random_start: bool = True
     mode: str = "decision"
+    # 1 = headline configuration; >1 only for the one-time
+    # restart convergence check (Sec. B1 of the handoff).
+    restarts: int = 1
     # Seeds: the attack optimizes against MC draws keyed by `seed`; the
     # subsequent evaluation must NOT reuse those draws, otherwise we score an
     # EOT attack on exactly the samples it optimized against.
@@ -157,7 +160,7 @@ class ExperimentConfig:
     #   "test" -- final. Touch once, for the numbers that go in the thesis.
     # Training always uses val_loader for its progress printout regardless;
     # that is harmless because `best/` is never restored.
-    eval_split: str = "val"
+    eval_split: str = "test"
 
     model: ModelConfig = field(default_factory=ModelConfig)
     standard_train: StandardTrainConfig = field(default_factory=StandardTrainConfig)
