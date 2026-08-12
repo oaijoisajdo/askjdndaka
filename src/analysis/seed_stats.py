@@ -11,6 +11,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from analysis import alignment as _align
 from analysis import metrics as M
 from analysis.loading import RUN_KEYS
 from analysis.scores import DEFAULT_SCORES, VARIANTS
@@ -96,20 +97,52 @@ def mean_uncertainty(per_input: pd.DataFrame, scores=DEFAULT_SCORES) -> pd.DataF
 
 def _cert_labels(g: pd.DataFrame, tau: float):
     """
-    Three-way certification verdict at tau.
+    Three-way certification verdict at tau, DIRECTION-VALID.
 
-    robust:          lower bound >= tau   (certified safe)
-    below_threshold: upper bound <  tau   (certified NOT safe at tau)
-    inconclusive:    everything else      (excluded from binary ROC per plan)
+    robust:          Clopper-Pearson lower limit >= tau   (certified safe)
+    below_threshold: theta-margin upper bound    <  tau   (certified unsafe)
+    inconclusive:    everything else
 
-    The failure label is below_threshold; inconclusive rows are dropped rather
-    than folded into either class, because assigning them would turn verifier
-    incompleteness into apparent detection performance.
+    Delegates to ``analysis.alignment.add_labels`` so this module and the
+    alignment analysis cannot drift apart: one definition, two callers.
+
+    Two changes from the previous version, both recorded in the frozen
+    protocol:
+
+    1. The robust direction is gated on ``p_safe_ci_low`` (Clopper-Pearson),
+       not on ``p_safe_lower`` (theta-adjusted Massart). Subtracting the
+       Massart slack from a quantity that already needs a high-confidence
+       floor is conservative twice over. At tau = 0.9 this moves order 1% of
+       rows across the boundary.
+    2. Inconclusive rows are no longer dropped. Exclusion is not neutral:
+       inconclusiveness is itself predictable from the uncertainty scores
+       (measured AUROC up to ~0.95 at moderate epsilon), and it varies by
+       family and radius, so dropping those rows removes exactly the inputs
+       where the score is most informative, differentially across cells.
+       Callers receive the mask and both conservative assignments instead;
+       see ``_cert_label_bracket``.
+
+    Returned for backward compatibility: (conclusive_mask, failure_label).
     """
-    robust = g["p_safe_lower"] >= tau
-    below = g["p_safe_upper"] < tau
-    conclusive = robust | below
-    return conclusive, below.astype(float)
+    d = _align.add_labels(g, tau)
+    return ~d["lab_inconclusive"], d["lab_below"].astype(float)
+
+
+def _cert_label_bracket(g: pd.DataFrame, tau: float):
+    """
+    Conservative-assignment bracket for the failure label.
+
+    Returns ``(fail_as_below, fail_as_robust, inconclusive_mask)`` over ALL
+    rows, where the two failure vectors resolve every inconclusive row to
+    below-threshold and to robust respectively. Any metric computed on both
+    is bracketed: the true value under any resolution of the verifier's
+    unknowns lies between them, and no rows are discarded.
+    """
+    d = _align.add_labels(g, tau)
+    inc = d["lab_inconclusive"]
+    return ((d["lab_below"] | inc).astype(float),
+            d["lab_below"].astype(float),
+            inc)
 
 
 def detection_and_alignment(
@@ -157,17 +190,31 @@ def detection_and_alignment(
 
                 for tau in taus:
                     conclusive, fail = _cert_labels(g, tau)
+                    fail_inc_below, fail_inc_robust, inc = \
+                        _cert_label_bracket(g, tau)
                     sc, fc = s[conclusive], fail[conclusive]
                     rows.append({
                         **keys, "score": score, "variant": variant,
                         "target": f"cert_fail_tau{tau:g}",
                         "score_constant": M.is_constant(sc),
+                        # Conclusive-only: comparable to the previous build,
+                        # but no longer the primary number.
                         "auroc": M.auroc(sc, fc),
                         "auprc": M.auprc(sc, fc),
                         "prevalence": M.prevalence(fc),
+                        # Bracket over all rows under both conservative
+                        # resolutions of the verifier's unknowns. The true
+                        # AUROC lies between these two regardless of how the
+                        # inconclusive rows would have resolved.
+                        "auroc_inc_as_below": M.auroc(s, fail_inc_below),
+                        "auroc_inc_as_robust": M.auroc(s, fail_inc_robust),
+                        # Diagnostic: is inconclusiveness itself predictable?
+                        # If this is far from 0.5, exclusion is not neutral.
+                        "auroc_inconclusive": M.auroc(s, inc.astype(float)),
                         "n_used": int(conclusive.sum()),
                         "n_conclusive": int(conclusive.sum()),
-                        "n_inconclusive": int((~conclusive).sum()),
+                        "n_inconclusive": int(inc.sum()),
+                        "frac_inconclusive": float(inc.mean()),
                         "neg_spearman_p_safe": np.nan,
                         "neg_spearman_p_safe_optimistic": np.nan,
                     })

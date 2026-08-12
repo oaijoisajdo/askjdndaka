@@ -26,7 +26,16 @@ RUN_KEYS = ["family", "condition", "seed", "train_eps", "rob_lam"]
 # Certification per-input fields carried through verbatim.
 CERT_FIELDS = (
     "p_safe_lower", "p_safe_upper", "p_safe_point", "p_safe_point_optimistic",
-    "p_safe_ci_low", "p_safe_ci_high", "unknown_frac",
+    "p_safe_ci_low", "p_safe_ci_high",
+    # Optimistic-side CP interval: without these the optimistic estimator's
+    # interval is not reconstructable from the CSV (the two sides stop at
+    # different n), which is what the bracketed analysis needs.
+    "p_safe_ci_low_optimistic", "p_safe_ci_high_optimistic",
+    "unknown_frac",
+    # Raw per-side counts, so every reported bound can be recomputed from
+    # the CSV alone rather than trusted.
+    "k_violation_pessimistic", "unk_pessimistic",
+    "k_violation_optimistic", "unk_optimistic",
     "n_samples_used", "n_property_evaluations", "mean_net_verdict",
 )
 
@@ -58,6 +67,27 @@ def _keys(payload: dict, condition: str) -> dict:
     }
 
 
+def _with_expected_entropy(row: dict) -> dict:
+    """Fill ``mean_expected_entropy`` when ``clean_report`` omitted it.
+
+    Expected (aleatoric) entropy is E_S[H(p_S)] = H(p_bar) - MI by
+    definition, and the mean over inputs is linear, so the population-level
+    value is exactly ``mean_predictive_entropy - mean_mutual_information``.
+    This is an identity, not an approximation: it agrees with the
+    directly-computed per-input quantity to float accumulation noise (~7e-9).
+
+    Runs produced before the emission was added to ``clean_report`` are
+    therefore fully recoverable and need not be re-run. Rows that already
+    carry the field are left untouched.
+    """
+    if ("mean_expected_entropy" not in row
+            and "mean_predictive_entropy" in row
+            and "mean_mutual_information" in row):
+        row["mean_expected_entropy"] = (row["mean_predictive_entropy"]
+                                        - row["mean_mutual_information"])
+    return row
+
+
 def eval_rows(payload: dict) -> list[dict]:
     """
     Population-level metrics on the full eval split, one row per epsilon.
@@ -73,9 +103,11 @@ def eval_rows(payload: dict) -> list[dict]:
         if block is None:
             continue
         keys = _keys(payload, condition)
-        rows.append({**keys, "eps": 0.0, **_scalars(block["clean"])})
+        rows.append(_with_expected_entropy(
+            {**keys, "eps": 0.0, **_scalars(block["clean"])}))
         for eps_key, report in block.get("pgd", {}).items():
-            rows.append({**keys, "eps": float(eps_key), **_scalars(report)})
+            rows.append(_with_expected_entropy(
+                {**keys, "eps": float(eps_key), **_scalars(report)}))
     return rows
 
 

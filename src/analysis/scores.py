@@ -17,6 +17,9 @@ _RAW_FIELDS = {
     "expected_entropy": False,
     "confidence": True,
     "predictive_margin": True,
+    # Reparameterization-invariant posterior-spread proxy. Higher = riskier
+    # already (more disagreement across draws), so no flip.
+    "predictive_variance": False,
 }
 
 SCORE_NAMES = (
@@ -25,6 +28,7 @@ SCORE_NAMES = (
     "expected_entropy",
     "one_minus_confidence",
     "one_minus_margin",
+    "predictive_variance",
 )
 
 # The plan's main comparison. The other three are retained per-input for the
@@ -34,7 +38,8 @@ DEFAULT_SCORES = ("mutual_information", "one_minus_confidence")
 # Deterministic models have MI identically zero and expected entropy equal to
 # predictive entropy; those columns are still emitted (as zeros / duplicates)
 # so the table schema stays uniform, but MI-based AUROC will be NaN there.
-DEGENERATE_FOR_DETERMINISTIC = ("mutual_information", "expected_entropy")
+DEGENERATE_FOR_DETERMINISTIC = ("mutual_information", "expected_entropy",
+                                "predictive_variance")
 
 VARIANTS = ("clean", "adv", "delta")
 
